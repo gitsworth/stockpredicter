@@ -27,8 +27,8 @@ if data.empty:
     st.error("No data found for the given stock symbol.")
     st.stop()
 
-# Extract 'Adj Close' prices
-prices = data['Adj Close']
+# Extract 'Close' prices (adjusted prices due to auto_adjust=True)
+prices = data['Close']
 
 # Check for minimum data requirement
 if len(prices) < 30:
@@ -95,7 +95,7 @@ fig.add_vline(x=last_date, line=dict(color='gray', dash='dash'))
 fig.update_layout(
     title=f"{stock_symbol} Stock Price Prediction",
     xaxis_title="Date",
-    yaxis_title="Adjusted Close Price",
+    yaxis_title="Close Price (Adjusted)",
     legend_title="Legend",
     hovermode='x unified'
 )
