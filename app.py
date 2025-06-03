@@ -6,76 +6,95 @@ from sklearn.linear_model import LinearRegression
 import plotly.graph_objs as go
 from datetime import datetime, timedelta
 
-st.title("📊 Candlestick Stock Trend Predictor")
+# App Title
+st.title("📈 Stock Trend Predictor")
+st.markdown("""
+Predict future stock prices using a simple Linear Regression model.  
+*Note: For educational purposes only — not for financial decisions.*
+""")
 
-# Sidebar inputs
+# Sidebar
 stock_symbol = st.sidebar.text_input("Stock Symbol", "AAPL")
 num_years = st.sidebar.slider("Years of historical data", 1, 10, 5)
-pred_days = st.sidebar.number_input("Days to predict", 1, 30, 7)
+pred_days = st.sidebar.slider("Days to Predict", 1, 30, 10)
 
-# Date range
+# Dates
 end_date = datetime.today()
 start_date = end_date - timedelta(days=365 * num_years)
 
-# Download OHLCV data
+# Download data
 data = yf.download(stock_symbol, start=start_date, end=end_date)
+
 if data.empty:
-    st.error("⚠️ No data found. Please enter a valid stock symbol.")
+    st.error("❌ No data found. Please check the stock symbol.")
     st.stop()
 
-# Plot candlestick chart
-fig = go.Figure(data=[
-    go.Candlestick(
-        x=data.index,
-        open=data['Open'],
-        high=data['High'],
-        low=data['Low'],
-        close=data['Close'],
-        increasing_line_color='green',
-        decreasing_line_color='red',
-        name='Price'
-    )
-])
-
-# Linear Regression Prediction Line (optional)
+# Use 'Close' prices
 prices = data['Close']
-if len(prices) >= 30:
-    N = 5
-    lagged_data = pd.DataFrame()
-    for i in range(N, 0, -1):
-        lagged_data[f'lag_{i}'] = prices.shift(i)
-    lagged_data['target'] = prices
-    lagged_data = lagged_data.dropna()
 
-    train_size = int(0.8 * len(lagged_data))
-    X_train = lagged_data.iloc[:train_size][[f'lag_{i}' for i in range(N, 0, -1)]]
-    y_train = lagged_data.iloc[:train_size]['target']
-    model = LinearRegression()
-    model.fit(X_train, y_train)
+# Minimum data check
+if len(prices) < 30:
+    st.error("❌ Not enough data to make predictions.")
+    st.stop()
 
-    # Recursive future prediction
-    last_N = prices[-N:].values
-    future_predictions = []
-    current_features = last_N
-    for _ in range(pred_days):
-        next_pred = model.predict([current_features])[0]
-        future_predictions.append(next_pred)
-        current_features = np.roll(current_features, -1)
-        current_features[-1] = next_pred
+# Create lagged dataset
+N = 5
+lagged_data = pd.DataFrame()
+for i in range(N, 0, -1):
+    lagged_data[f'lag_{i}'] = prices.shift(i)
+lagged_data['target'] = prices
+lagged_data.dropna(inplace=True)
 
-    # Add prediction line to chart
-    future_dates = pd.date_range(start=prices.index[-1] + pd.Timedelta(days=1), periods=pred_days, freq='B')
-    fig.add_trace(go.Scatter(x=future_dates, y=future_predictions, mode='lines+markers', name='Predicted Price', line=dict(color='blue', dash='dot')))
-else:
-    st.warning("Not enough data for prediction line.")
+# Train-test split
+train_size = int(0.8 * len(lagged_data))
+train_data = lagged_data.iloc[:train_size]
+test_data = lagged_data.iloc[train_size:]
 
-# Update layout
+X_train = train_data.drop(columns='target')
+y_train = train_data['target']
+X_test = test_data.drop(columns='target')
+y_test = test_data['target']
+
+# Train model
+model = LinearRegression()
+model.fit(X_train, y_train)
+
+# Test prediction
+y_pred_test = model.predict(X_test)
+
+# Future prediction
+last_N = prices[-N:].values
+future_predictions = []
+current_features = last_N
+
+for _ in range(pred_days):
+    current_features_reshaped = np.array(current_features).reshape(1, -1)  # ✅ FIXED HERE
+    next_pred = model.predict(current_features_reshaped)[0]
+    future_predictions.append(next_pred)
+    current_features = np.roll(current_features, -1)
+    current_features[-1] = next_pred
+
+# Future dates
+future_dates = pd.date_range(start=prices.index[-1] + pd.Timedelta(days=1), periods=pred_days, freq='B')
+
+# Plot
+fig = go.Figure()
+
+# Historical
+fig.add_trace(go.Scatter(x=prices.index, y=prices, mode='lines', name='Historical', line=dict(color='blue')))
+
+# Test prediction
+fig.add_trace(go.Scatter(x=test_data.index, y=y_pred_test, mode='lines', name='Test Prediction', line=dict(color='green', dash='dot')))
+
+# Future prediction
+fig.add_trace(go.Scatter(x=future_dates, y=future_predictions, mode='lines', name='Future Prediction', line=dict(color='red', dash='dash')))
+
 fig.update_layout(
-    title=f"{stock_symbol} Candlestick Chart with Predictions",
-    xaxis_title='Date',
-    yaxis_title='Price',
-    xaxis_rangeslider_visible=False,
-    hovermode="x unified"
+    title=f"{stock_symbol} Stock Price Prediction",
+    xaxis_title="Date",
+    yaxis_title="Price (USD)",
+    legend_title="Legend",
+    hovermode='x unified'
 )
 
 st.plotly_chart(fig)
